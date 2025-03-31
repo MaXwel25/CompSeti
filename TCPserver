@@ -1,0 +1,144 @@
+#include <iostream>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <vector>
+#include <string>
+#include <sstream>
+
+#pragma comment(lib, "ws2_32.lib")
+
+using namespace std;
+
+struct Student {
+    string name;
+    vector<int> grades;
+};
+
+// Функция для расчета среднего балла
+double calculateAverage(const vector<int>& grades) {
+    if (grades.empty()) return 0.0;
+    double sum = 0;
+    for (int grade : grades) sum += grade;
+    return sum / grades.size();
+}
+
+// Функция для обработки клиентского соединения
+void handleClient(SOCKET clientSocket) {
+    while (true) {
+        // Получаем размер данных
+        size_t dataSize;
+        int bytesReceived = recv(clientSocket, reinterpret_cast<char*>(&dataSize), sizeof(size_t), 0);
+        if (bytesReceived <= 0) break;
+
+        // Получаем сами данные
+        vector<char> buffer(dataSize);
+        bytesReceived = recv(clientSocket, buffer.data(), dataSize, 0);
+        if (bytesReceived <= 0) break;
+
+        // Десериализуем студента
+        size_t offset = 0;
+        size_t nameLength;
+        memcpy(&nameLength, buffer.data() + offset, sizeof(size_t));
+        offset += sizeof(size_t);
+
+        string name(buffer.data() + offset, nameLength);
+        offset += nameLength;
+
+        size_t gradesSize;
+        memcpy(&gradesSize, buffer.data() + offset, sizeof(size_t));
+        offset += sizeof(size_t);
+
+        vector<int> grades(gradesSize);
+        memcpy(grades.data(), buffer.data() + offset, gradesSize * sizeof(int));
+
+        // Вычисляем результаты
+        double avg = calculateAverage(grades);
+        string scholarship = (avg > 4.5) ? "Студент получает стипендию!" : "Стипендия не положена.";
+        string expulsion = (avg < 3.0) ? "Походу студента скоро отчислят)" : "Успеваемость удовлетворительная";
+
+        // Выводим информацию на сервере
+        cout << "\nПолучены данные студента: " << name << endl;
+        cout << "Оценки: ";
+        for (int grade : grades) cout << grade << " ";
+        cout << "\nСредний балл: " << avg << endl;
+        cout << scholarship << endl;
+        cout << expulsion << endl;
+
+        // Формируем ответ клиенту
+        string response = to_string(avg) + "\n" + scholarship + "\n" + expulsion;
+        size_t responseSize = response.size();
+
+        // Отправляем размер ответа
+        send(clientSocket, reinterpret_cast<const char*>(&responseSize), sizeof(size_t), 0);
+        // Отправляем сам ответ
+        send(clientSocket, response.c_str(), responseSize, 0);
+    }
+
+    closesocket(clientSocket);
+}
+
+int main() {
+    setlocale(LC_ALL, "rus");
+
+    // Инициализация Winsock
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        cerr << "Ошибка инициализации Winsock!" << endl;
+        return 1;
+    }
+
+    // Создание сокета
+    SOCKET serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (serverSocket == INVALID_SOCKET) {
+        cerr << "Ошибка создания сокета: " << WSAGetLastError() << endl;
+        WSACleanup();
+        return 1;
+    }
+
+    // Настройка адреса сервера
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(12345);
+
+    // Привязка сокета
+    if (bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        cerr << "Ошибка привязки сокета: " << WSAGetLastError() << endl;
+        closesocket(serverSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    // Начало прослушивания
+    if (listen(serverSocket, SOMAXCONN) == SOCKET_ERROR) {
+        cerr << "Ошибка прослушивания: " << WSAGetLastError() << endl;
+        closesocket(serverSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    cout << "Сервер запущен. Ожидание подключений..." << endl;
+
+    while (true) {
+        // Принятие подключения
+        sockaddr_in clientAddr;
+        int clientAddrSize = sizeof(clientAddr);
+        SOCKET clientSocket = accept(serverSocket, (sockaddr*)&clientAddr, &clientAddrSize);
+
+        if (clientSocket == INVALID_SOCKET) {
+            cerr << "Ошибка принятия подключения: " << WSAGetLastError() << endl;
+            continue;
+        }
+
+        char clientIP[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &clientAddr.sin_addr, clientIP, INET_ADDRSTRLEN);
+        cout << "Новое подключение от " << clientIP << ":" << ntohs(clientAddr.sin_port) << endl;
+
+        // Обработка клиента
+        handleClient(clientSocket);
+    }
+
+    closesocket(serverSocket);
+    WSACleanup();
+    return 0;
+}
