@@ -7,29 +7,29 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+using namespace std;
+
 struct Student {
-    std::string name;
-    std::vector<int> grades;
+    string name;
+    vector<int> grades;
 };
 
-double srzn(const std::vector<int>& grades) {
+double srzn(const vector<int>& grades) {
     if (grades.empty()) return 0.0;
     double sum = 0;
     for (int grade : grades) sum += grade;
     return sum / grades.size();
 }
 
-Student parseStudentData(const std::string& data) {
+Student parseStudentData(const string& data) {
     Student student;
-    std::istringstream iss(data);
+    istringstream iss(data);
 
-    // Чтение имени
     size_t nameLength;
     iss.read(reinterpret_cast<char*>(&nameLength), sizeof(size_t));
     student.name.resize(nameLength);
     iss.read(&student.name[0], nameLength);
 
-    // Чтение оценок
     size_t gradesSize;
     iss.read(reinterpret_cast<char*>(&gradesSize), sizeof(size_t));
     student.grades.resize(gradesSize);
@@ -38,10 +38,10 @@ Student parseStudentData(const std::string& data) {
     return student;
 }
 
-std::string prepareResponse(double avg) {
-    std::string result1 = (avg > 4.5) ? "Студент получает стипендию!" : "Стипендия не положена.";
-    std::string result2 = (avg < 3) ? "Походу студента скоро отчислят)" : " ";
-    return std::to_string(avg) + "\n" + result1 + "\n" + result2;
+string prepareResponse(double avg) {
+    string result1 = (avg > 4.5) ? "Студент получает стипендию!" : "Стипендия не положена.";
+    string result2 = (avg < 3) ? "Походу студента скоро отчислят)" : " ";
+    return to_string(avg) + "\n" + result1 + "\n" + result2;
 }
 
 int main() {
@@ -49,13 +49,13 @@ int main() {
 
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        std::cerr << "Ошибка инициализации Winsock" << std::endl;
+        cerr << "Ошибка инициализации Winsock" << endl;
         return 1;
     }
 
     SOCKET serverSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (serverSocket == INVALID_SOCKET) {
-        std::cerr << "Ошибка создания сокета: " << WSAGetLastError() << std::endl;
+        cerr << "Ошибка создания сокета: " << WSAGetLastError() << endl;
         WSACleanup();
         return 1;
     }
@@ -66,13 +66,13 @@ int main() {
     serverAddr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        std::cerr << "Ошибка привязки сокета: " << WSAGetLastError() << std::endl;
+        cerr << "Ошибка привязки сокета: " << WSAGetLastError() << endl;
         closesocket(serverSocket);
         WSACleanup();
         return 1;
     }
 
-    std::cout << "Сервер запущен и ожидает подключений..." << std::endl;
+    cout << "Сервер запущен и ожидает подключений..." << endl;
 
     char buffer[1024];
     sockaddr_in clientAddr;
@@ -82,18 +82,18 @@ int main() {
         int bytesReceived = recvfrom(serverSocket, buffer, sizeof(buffer), 0,
             (sockaddr*)&clientAddr, &clientAddrSize);
         if (bytesReceived == SOCKET_ERROR) {
-            std::cerr << "Ошибка приема данных: " << WSAGetLastError() << std::endl;
+            cerr << "Ошибка приема данных: " << WSAGetLastError() << endl;
             continue;
         }
 
-        std::string receivedData(buffer, bytesReceived);
+        string receivedData(buffer, bytesReceived);
         Student student = parseStudentData(receivedData);
 
-        std::cout << "\nПолучены данные студента: " << student.name << std::endl;
+        cout << "\nПолучены данные студента: " << student.name << endl;
         double avg = srzn(student.grades);
-        std::cout << "Средний балл: " << avg << std::endl;
+        cout << "Средний балл: " << avg << endl;
 
-        std::string response = prepareResponse(avg);
+        string response = prepareResponse(avg);
 
         sendto(serverSocket, response.c_str(), response.size(), 0,
             (sockaddr*)&clientAddr, clientAddrSize);
