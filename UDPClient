@@ -7,103 +7,105 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+using namespace std;
+
 struct Student {
-    std::string name;
-    std::vector<int> grades;
+    string name;
+    vector<int> grades;
 };
 
-std::string prepareStudentData(const Student& student) {
-    std::ostringstream oss;
-    
+string prepareStudentData(const Student& student) {
+    ostringstream oss;
+
     size_t nameLength = student.name.length();
     oss.write(reinterpret_cast<const char*>(&nameLength), sizeof(size_t));
     oss.write(student.name.c_str(), nameLength);
-    
+
     size_t gradesSize = student.grades.size();
     oss.write(reinterpret_cast<const char*>(&gradesSize), sizeof(size_t));
     oss.write(reinterpret_cast<const char*>(student.grades.data()), sizeof(int) * gradesSize);
-    
+
     return oss.str();
 }
 
 int main() {
     setlocale(LC_ALL, "rus");
-    
+
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        std::cerr << "Ошибка инициализации Winsock" << std::endl;
+        cerr << "Ошибка инициализации Winsock" << endl;
         return 1;
     }
-    
+
     SOCKET clientSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (clientSocket == INVALID_SOCKET) {
-        std::cerr << "Ошибка создания сокета: " << WSAGetLastError() << std::endl;
+        cerr << "Ошибка создания сокета: " << WSAGetLastError() << endl;
         WSACleanup();
         return 1;
     }
-    
+
     sockaddr_in serverAddr;
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(12345);
     inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr);
-    
+
     while (true) {
         Student student;
-        
-        std::cout << "Введите имя и фамилию студента: ";
-        std::getline(std::cin, student.name);
+
+        cout << "Введите имя и фамилию студента (или 'exit' для выхода): ";
+        getline(cin, student.name);
         if (student.name == "exit") break;
-        
-        std::cout << "Введите оценки через пробел: ";
-        std::string input;
-        std::getline(std::cin, input);
-        
-        std::stringstream ss(input);
+
+        cout << "Введите оценки через пробел (от 2 до 5): ";
+        string input;
+        getline(cin, input);
+
+        stringstream ss(input);
         int grade;
         while (ss >> grade) {
             if (grade < 2 || grade > 5) {
-                std::cout << "Ошибка: оценки должны быть от 2 до 5!" << std::endl;
+                cout << "Ошибка: оценки должны быть от 2 до 5!" << endl;
                 continue;
             }
             student.grades.push_back(grade);
         }
-        
+
         if (student.grades.empty()) {
-            std::cout << "Нет валидных оценок для отправки!" << std::endl;
+            cout << "Нет валидных оценок для отправки!" << endl;
             continue;
         }
-        
-        std::string studentData = prepareStudentData(student);
-        
-        sendto(clientSocket, studentData.c_str(), studentData.size(), 0, 
-               (sockaddr*)&serverAddr, sizeof(serverAddr));
-        
-        std::cout << "Данные отправлены, ждём результат..." << std::endl;
-        
+
+        string studentData = prepareStudentData(student);
+
+        sendto(clientSocket, studentData.c_str(), studentData.size(), 0,
+            (sockaddr*)&serverAddr, sizeof(serverAddr));
+
+        cout << "Данные отправлены, ждём результат..." << endl;
+
         char buffer[1024];
         int serverAddrSize = sizeof(serverAddr);
-        int bytesReceived = recvfrom(clientSocket, buffer, sizeof(buffer), 0, 
-                                    (sockaddr*)&serverAddr, &serverAddrSize);
+        int bytesReceived = recvfrom(clientSocket, buffer, sizeof(buffer), 0,
+            (sockaddr*)&serverAddr, &serverAddrSize);
         if (bytesReceived == SOCKET_ERROR) {
-            std::cerr << "Ошибка приема данных: " << WSAGetLastError() << std::endl;
+            cerr << "Ошибка приема данных: " << WSAGetLastError() << endl;
             continue;
         }
-        
-        std::string response(buffer, bytesReceived);
-        std::istringstream iss(response);
-        std::string avg, scholarship, expulsion;
-        
-        std::getline(iss, avg);
-        std::getline(iss, scholarship);
-        std::getline(iss, expulsion);
-        
-        std::cout << "Средний балл: " << avg << std::endl;
-        std::cout << "Ответ от сервера: " << scholarship << std::endl;
+
+        string response(buffer, bytesReceived);
+        istringstream iss(response);
+        string avg, scholarship, expulsion;
+
+        getline(iss, avg);
+        getline(iss, scholarship);
+        getline(iss, expulsion);
+
+        cout << "Средний балл: " << avg << endl;
+        cout << "Ответ от сервера: " << scholarship << endl;
         if (!expulsion.empty()) {
-            std::cout << expulsion << std::endl;
+            cout << expulsion << endl;
         }
     }
-    
+
     closesocket(clientSocket);
     WSACleanup();
     return 0;
