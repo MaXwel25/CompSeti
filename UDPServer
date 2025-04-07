@@ -1,55 +1,20 @@
-#include <iostream>
-#include <vector>
-#include <string>
-#include <sstream>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <iostream>
+#include <string>
 
 #pragma comment(lib, "ws2_32.lib")
 
 using namespace std;
 
-struct Student {
-    string name;
-    vector<int> grades;
-};
-
-double srzn(const vector<int>& grades) {
-    if (grades.empty()) return 0.0;
-    double sum = 0;
-    for (int grade : grades) sum += grade;
-    return sum / grades.size();
-}
-
-Student parseStudentData(const string& data) {
-    Student student;
-    istringstream iss(data);
-
-    size_t nameLength;
-    iss.read(reinterpret_cast<char*>(&nameLength), sizeof(size_t));
-    student.name.resize(nameLength);
-    iss.read(&student.name[0], nameLength);
-
-    size_t gradesSize;
-    iss.read(reinterpret_cast<char*>(&gradesSize), sizeof(size_t));
-    student.grades.resize(gradesSize);
-    iss.read(reinterpret_cast<char*>(student.grades.data()), sizeof(int) * gradesSize);
-
-    return student;
-}
-
-string prepareResponse(double avg) {
-    string result1 = (avg > 4.5) ? "Студент получает стипендию!" : "Стипендия не положена.";
-    string result2 = (avg < 3) ? "Походу студента скоро отчислят)" : " ";
-    return to_string(avg) + "\n" + result1 + "\n" + result2;
-}
+const int BUFFER_SIZE = 1024;
+const u_short PORT = 12345;
 
 int main() {
-    setlocale(LC_ALL, "rus");
-
+    setlocale(LC_ALL, "ru");
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        cerr << "Ошибка инициализации Winsock" << endl;
+        cerr << "Ошибка инициализации Winsock: " << WSAGetLastError() << endl;
         return 1;
     }
 
@@ -62,7 +27,7 @@ int main() {
 
     sockaddr_in serverAddr;
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(12345);
+    serverAddr.sin_port = htons(PORT);
     serverAddr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
@@ -72,31 +37,27 @@ int main() {
         return 1;
     }
 
-    cout << "Сервер запущен и ожидает подключений..." << endl;
+    cout << "UDP Эхо-Сервер запущен на порту " << PORT << endl;
+    cout << "Ожидание входящих данных..." << endl;
 
-    char buffer[1024];
+    char buffer[BUFFER_SIZE];
     sockaddr_in clientAddr;
     int clientAddrSize = sizeof(clientAddr);
 
     while (true) {
-        int bytesReceived = recvfrom(serverSocket, buffer, sizeof(buffer), 0,
-            (sockaddr*)&clientAddr, &clientAddrSize);
+        int bytesReceived = recvfrom(serverSocket, buffer, BUFFER_SIZE, 0, (sockaddr*)&clientAddr, &clientAddrSize);
+
         if (bytesReceived == SOCKET_ERROR) {
-            cerr << "Ошибка приема данных: " << WSAGetLastError() << endl;
+            cerr << "Ошибка при получении данных: " << WSAGetLastError() << endl;
             continue;
         }
 
-        string receivedData(buffer, bytesReceived);
-        Student student = parseStudentData(receivedData);
-
-        cout << "\nПолучены данные студента: " << student.name << endl;
-        double avg = srzn(student.grades);
-        cout << "Средний балл: " << avg << endl;
-
-        string response = prepareResponse(avg);
-
-        sendto(serverSocket, response.c_str(), response.size(), 0,
-            (sockaddr*)&clientAddr, clientAddrSize);
+        char clientIP[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &clientAddr.sin_addr, clientIP, INET_ADDRSTRLEN);
+        cout << "Получено сообщение: " << string(buffer, bytesReceived)
+            << " (" << bytesReceived << " байт) от "
+            << clientIP << ":" << ntohs(clientAddr.sin_port) << endl;
+        sendto(serverSocket, buffer, bytesReceived, 0, (sockaddr*)&clientAddr, clientAddrSize);
     }
 
     closesocket(serverSocket);
