@@ -1,0 +1,137 @@
+#include <iostream>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <vector>
+#include <string>
+#include <sstream>
+
+#pragma comment(lib, "ws2_32.lib")
+
+using namespace std;
+
+struct Student {
+    string name;
+    vector<int> grades;
+};
+
+bool connectToServer(SOCKET& clientSocket) {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        cerr << "Ошибка инициализации Winsock!" << endl;
+        return false;
+    }
+
+    clientSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (clientSocket == INVALID_SOCKET) {
+        cerr << "Ошибка создания сокета: " << WSAGetLastError() << endl;
+        WSACleanup();
+        return false;
+    }
+
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr);
+    serverAddr.sin_port = htons(12345);
+
+    if (connect(clientSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        cerr << "Ошибка подключения к серверу: " << WSAGetLastError() << endl;
+        closesocket(clientSocket);
+        WSACleanup();
+        return false;
+    }
+
+    return true;
+}
+
+void sendStudentData(SOCKET clientSocket, const Student& student) {
+    size_t nameLength = student.name.size();
+    size_t gradesSize = student.grades.size();
+    size_t dataSize = sizeof(size_t) + nameLength + sizeof(size_t) + gradesSize * sizeof(int);
+
+    vector<char> buffer(dataSize);
+    size_t offset = 0;
+
+    memcpy(buffer.data() + offset, &nameLength, sizeof(size_t));
+    offset += sizeof(size_t);
+
+    memcpy(buffer.data() + offset, student.name.c_str(), nameLength);
+    offset += nameLength;
+
+    memcpy(buffer.data() + offset, &gradesSize, sizeof(size_t));
+    offset += sizeof(size_t);
+
+    memcpy(buffer.data() + offset, student.grades.data(), gradesSize * sizeof(int));
+
+    send(clientSocket, reinterpret_cast<const char*>(&dataSize), sizeof(size_t), 0);
+
+    send(clientSocket, buffer.data(), dataSize, 0);
+
+    cout << "Данные отправлены. Ожидание ответа от сервера..." << endl;
+
+    size_t responseSize;
+    int bytesReceived = recv(clientSocket, reinterpret_cast<char*>(&responseSize), sizeof(size_t), 0);
+    if (bytesReceived <= 0) {
+        cerr << "Ошибка получения ответа от сервера" << endl;
+        return;
+    }
+
+    vector<char> responseBuffer(responseSize);
+    bytesReceived = recv(clientSocket, responseBuffer.data(), responseSize, 0);
+    if (bytesReceived <= 0) {
+        cerr << "Ошибка получения ответа от сервера" << endl;
+        return;
+    }
+
+    string response(responseBuffer.begin(), responseBuffer.end());
+
+    size_t pos1 = response.find('\n');
+    size_t pos2 = response.find('\n', pos1 + 1);
+
+    string avg = response.substr(0, pos1);
+    string scholarship = response.substr(pos1 + 1, pos2 - pos1 - 1);
+    string expulsion = response.substr(pos2 + 1);
+
+    cout << "\nРезультаты:" << endl;
+    cout << "Средний балл: " << avg << endl;
+    cout << "Стипендия: " << scholarship << endl;
+    cout << "Статус: " << expulsion << "\n" << endl;
+}
+
+int main() {
+    setlocale(LC_ALL, "rus");
+    while (true) {
+        Student student;
+
+        cout << "Введите имя и фамилию студента (или 'exit' для выхода): ";
+        getline(cin, student.name);
+        if (student.name == "exit") break;
+
+        cout << "Введите оценки через пробел (от 2 до 5): ";
+        string input;
+        getline(cin, input);
+
+        stringstream ss(input);
+        int grade;
+        while (ss >> grade) {
+            if (grade < 2 || grade > 5) {
+                cout << "Ошибка: оценки должны быть от 2 до 5!" << endl;
+                continue;
+            }
+            student.grades.push_back(grade);
+        }
+
+        if (student.grades.empty()) {
+            cout << "Нет валидных оценок для отправки!" << endl;
+            continue;
+        }
+
+        SOCKET clientSocket;
+        if (connectToServer(clientSocket)) {
+            sendStudentData(clientSocket, student);
+            closesocket(clientSocket);
+            WSACleanup();
+        }
+    }
+
+    return 0;
+}

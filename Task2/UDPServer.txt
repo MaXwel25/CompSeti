@@ -1,0 +1,66 @@
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iostream>
+#include <string>
+
+#pragma comment(lib, "ws2_32.lib")
+
+using namespace std;
+
+const int BUFFER_SIZE = 1024;
+const u_short PORT = 12345;
+
+int main() {
+    setlocale(LC_ALL, "ru");
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        cerr << "Ошибка инициализации Winsock: " << WSAGetLastError() << endl;
+        return 1;
+    }
+
+    SOCKET serverSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (serverSocket == INVALID_SOCKET) {
+        cerr << "Ошибка создания сокета: " << WSAGetLastError() << endl;
+        WSACleanup();
+        return 1;
+    }
+
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(PORT);
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        cerr << "Ошибка привязки сокета: " << WSAGetLastError() << endl;
+        closesocket(serverSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    cout << "UDP Эхо-Сервер запущен на порту " << PORT << endl;
+    cout << "Ожидание входящих данных..." << endl;
+
+    char buffer[BUFFER_SIZE];
+    sockaddr_in clientAddr;
+    int clientAddrSize = sizeof(clientAddr);
+
+    while (true) {
+        int bytesReceived = recvfrom(serverSocket, buffer, BUFFER_SIZE, 0, (sockaddr*)&clientAddr, &clientAddrSize);
+
+        if (bytesReceived == SOCKET_ERROR) {
+            cerr << "Ошибка при получении данных: " << WSAGetLastError() << endl;
+            continue;
+        }
+
+        char clientIP[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &clientAddr.sin_addr, clientIP, INET_ADDRSTRLEN);
+        cout << "Получено сообщение: " << string(buffer, bytesReceived)
+            << " (" << bytesReceived << " байт) от "
+            << clientIP << ":" << ntohs(clientAddr.sin_port) << endl;
+        sendto(serverSocket, buffer, bytesReceived, 0, (sockaddr*)&clientAddr, clientAddrSize);
+    }
+
+    closesocket(serverSocket);
+    WSACleanup();
+    return 0;
+}
