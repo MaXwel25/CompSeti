@@ -1,0 +1,100 @@
+#include <fstream>
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <vector>
+#include <sstream>
+using namespace std;
+
+struct Student {
+    string name;
+    vector<int> grades;
+};
+
+vector<Student> readFile(const string& f1) {
+    ifstream file(f1, ios::binary);
+    vector<Student> students;
+    if (!file) {
+        cerr<< "Ошибка открытия файла!" << endl;
+        return students;
+    }
+    while (file.peek() != EOF) {
+        Student student;
+        size_t nameLength;
+        if (!file.read(reinterpret_cast<char*>(&nameLength), sizeof(size_t)))
+            break;
+        string name(nameLength, '\0');
+        if (!file.read(&name[0], nameLength))
+            break;
+        student.name = name;
+        size_t gradesSize;
+        if (!file.read(reinterpret_cast<char*>(&gradesSize), sizeof(size_t)))
+            break;
+        student.grades.resize(gradesSize);
+        if (!file.read(reinterpret_cast<char*>(student.grades.data()), sizeof(int) * gradesSize))
+            break;
+
+        students.push_back(student);
+    }
+
+    return students;
+}
+
+double srzn(const vector<int>& grades) {
+    if (grades.empty())
+        return 0.0;
+    double sum = 0;
+    for (int grade : grades)
+        sum += grade;
+    return sum / grades.size();
+}
+
+void writeFile(double sr, const string& result, const string& f2) {
+    ofstream resFile(f2);
+    if (!resFile) {
+        cerr << "Ошибка записи в файл!" << endl;
+        return;
+    }
+    resFile << sr << endl << result << endl;
+}
+
+string perevod(int num) {
+    stringstream ch;
+    ch << num;
+    return ch.str();
+}
+
+int main() {
+    setlocale(LC_ALL, "rus");
+    string f1 = "C:\\Users\\MaXwell\\Desktop\\f1.bin";
+    string f2 = "C:\\Users\\MaXwell\\Desktop\\f2.bin";
+    cout << "Сервер запущен..." << endl<<"Ожидание ввода от клиента!"<<endl;
+    string lastContent;
+    while (true) {
+        this_thread::sleep_for(chrono::seconds(1));
+
+        vector<Student> students = readFile(f1);
+        if (students.empty())
+            continue;
+        string currentContent;
+        for (const auto& student : students) {
+            currentContent += student.name + ":";
+            for (int grade : student.grades) {
+                currentContent += perevod(grade) + " ";
+            }
+        }
+        if (currentContent == lastContent)
+            continue;
+        const Student& lastStudent = students.back();
+        cout << "\nФайл обновлён! Студент: " << lastStudent.name << endl;
+        double avg = srzn(lastStudent.grades);
+        cout << "Средний балл: " << avg << endl;
+        string result1 = (avg > 4.5) ? "Студент получает стипендию!" : "Стипендия не положена.";
+        string result2 = (avg < 3) ? "Походу студента скоро отчислят)":  " ";
+        cout << result1 << endl;
+        cout << result2 << endl;
+        writeFile(avg, result1, f2);
+        lastContent = currentContent;
+    }
+    return 0;
+}
