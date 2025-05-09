@@ -1,0 +1,161 @@
+
+#include <iostream>
+#include <string>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "Ws2_32.lib")
+using namespace std;
+
+int main() {
+    setlocale(LC_ALL, "rus");
+
+    WSADATA wsaData;
+    SOCKET client_socket;
+    struct sockaddr_in server_addr;
+
+    string host = "127.0.0.1";
+    string request =
+        "GET /index.html HTTP/1.1\r\n"
+        "Host: 127.0.0.1\r\n"
+        "Connection: close\r\n"
+        "\r\n";
+
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        cerr << "Ошибка инициализации Winsock: " << WSAGetLastError() << endl;
+        return 1;
+    }
+
+    client_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (client_socket == INVALID_SOCKET) {
+        cerr << "Ошибка создания сокета: " << WSAGetLastError() << endl;
+        WSACleanup();
+        return 1;
+    }
+
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(8080);
+
+
+    if (inet_pton(AF_INET, host.c_str(), &server_addr.sin_addr) <= 0) {
+        cerr << "Некорректный адрес сервера" << endl;
+        closesocket(client_socket);
+        WSACleanup();
+        return 1;
+    }
+
+    if (connect(client_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
+        cerr << "Ошибка подключения к серверу: " << WSAGetLastError() << endl;
+        closesocket(client_socket);
+        WSACleanup();
+        return 1;
+    }
+
+    send(client_socket, request.c_str(), request.size(), 0);
+    cout << "Запрос отправлен:\n" << request << endl;
+
+    char buffer[1024] = { 0 };
+    int bytes_received;
+    while ((bytes_received = recv(client_socket, buffer, 1024, 0)) > 0) {
+        cout.write(buffer, bytes_received);
+    }
+
+    if (bytes_received == SOCKET_ERROR) {
+        cerr << "Ошибка получения ответа от сервера: " << WSAGetLastError() << endl;
+    }
+
+    closesocket(client_socket);
+    WSACleanup();
+    return 0;
+}
+
+
+/*
+#include <iostream>
+#include <string>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "Ws2_32.lib")
+using namespace std;
+
+int main() {
+    setlocale(LC_ALL, "rus");
+
+    WSADATA wsaData;
+    SOCKET client_socket = INVALID_SOCKET;
+    struct addrinfo* result = NULL, * ptr = NULL, hints;
+
+    string host = "json.org";
+    string request =
+        "GET / HTTP/1.1\r\n"
+        "Host: json.org\r\n"
+        "Connection: close\r\n"
+        "\r\n";
+
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        cerr << "Ошибка инициализации Winsock: " << WSAGetLastError() << endl;
+        return 1;
+    }
+
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    if (getaddrinfo(host.c_str(), "80", &hints, &result) != 0) {
+        cerr << "Ошибка получения адреса сервера: " << WSAGetLastError() << endl;
+        WSACleanup();
+        return 1;
+    }
+
+    for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
+        client_socket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+        if (client_socket == INVALID_SOCKET) {
+            cerr << "Ошибка создания сокета: " << WSAGetLastError() << endl;
+            WSACleanup();
+            return 1;
+        }
+
+        if (connect(client_socket, ptr->ai_addr, (int)ptr->ai_addrlen) == SOCKET_ERROR) {
+            closesocket(client_socket);
+            client_socket = INVALID_SOCKET;
+            continue;
+        }
+        break;
+    }
+    freeaddrinfo(result);
+
+    if (client_socket == INVALID_SOCKET) {
+        cerr << "Не удалось подключиться к серверу" << endl;
+        WSACleanup();
+        return 1;
+    }
+
+    if (send(client_socket, request.c_str(), (int)request.size(), 0) == SOCKET_ERROR) {
+        cerr << "Ошибка отправки запроса: " << WSAGetLastError() << endl;
+        closesocket(client_socket);
+        WSACleanup();
+        return 1;
+    }
+
+    cout << "Запрос отправлен:\n" << request << endl;
+
+    char buffer[1024];
+    int bytes_received;
+    do {
+        bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+        if (bytes_received > 0) {
+            cout.write(buffer, bytes_received);
+        }
+        else if (bytes_received == 0) {
+            cout << "\nСоединение закрыто сервером" << endl;
+        }
+        else {
+            cerr << "Ошибка получения данных: " << WSAGetLastError() << endl;
+        }
+    } while (bytes_received > 0);
+
+    closesocket(client_socket);
+    WSACleanup();
+    return 0;
+}
+*/
