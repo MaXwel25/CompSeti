@@ -1,0 +1,146 @@
+#include <iostream>
+#include <thread>
+#include <vector>
+#include <map>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+#pragma comment(lib, "ws2_32.lib")
+
+#define PORT "8080"
+#define BUFFER_SIZE 2048
+
+
+using std::cin;
+using std::cout;
+using std::cerr;
+using std::vector;
+using std::endl;
+using std::string;
+using std::map;
+using std::thread;
+
+map<SOCKET, string> clients;
+CRITICAL_SECTION cs;
+
+void handle_client(SOCKET client_socket) {
+    char buffer[BUFFER_SIZE];
+    int result;
+
+    // Получаем имя клиента
+    result = recv(client_socket, buffer, BUFFER_SIZE, 0);
+    if (result <= 0) {
+        cout << "Клиент отключился до отправки имени." << endl;
+        closesocket(client_socket);
+        return;
+    }
+
+    buffer[result] = '\0';
+    string client_name(buffer);
+
+    EnterCriticalSection(&cs);
+    clients[client_socket] = client_name;
+    cout << "Клиент " << client_name << " подключился." << endl;
+    LeaveCriticalSection(&cs);
+
+    while (true) {
+        result = recv(client_socket, buffer, BUFFER_SIZE, 0);
+        if (result <= 0) {
+            EnterCriticalSection(&cs);
+            cout << "Клиент " << clients[client_socket] << " отключился." << endl;
+            clients.erase(client_socket);
+            LeaveCriticalSection(&cs);
+            break;
+        }
+
+        buffer[result] = '\0';
+        EnterCriticalSection(&cs);
+        cout << "Сообщение от " << clients[client_socket] << ": " << buffer << endl;
+        LeaveCriticalSection(&cs);
+
+        // Эхо-ответ с именем клиента
+        string response = clients[client_socket] + ": " + buffer;
+        send(client_socket, response.c_str(), response.length(), 0);
+    }
+    closesocket(client_socket);
+}
+
+int main() {
+    setlocale(LC_ALL, "ru");
+    WSADATA wsaData;
+    SOCKET listen_socket, client_socket;
+    struct addrinfo* result = NULL, hints;
+    int iResult;
+
+    InitializeCriticalSection(&cs);
+
+    iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (iResult != 0) {
+        cerr << "Ошибка WSAStartup: " << iResult << endl;
+        return 1;
+    }
+
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_flags = AI_PASSIVE;
+
+    // Получение адреса
+    iResult = getaddrinfo(NULL, PORT, &hints, &result);
+    if (iResult != 0) {
+        cerr << "Ошибка getaddrinfo: " << iResult << endl;
+        WSACleanup();
+        return 1;
+    }
+
+    // Создание сокета для прослушивания
+    listen_socket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    if (listen_socket == INVALID_SOCKET) {
+        cerr << "Ошибка создания сокета: " << WSAGetLastError() << endl;
+        freeaddrinfo(result);
+        WSACleanup();
+        return 1;
+    }
+
+    // Привязка сокета
+    iResult = bind(listen_socket, result->ai_addr, (int)result->ai_addrlen);
+    if (iResult == SOCKET_ERROR) {
+        cerr << "Ошибка привязки: " << WSAGetLastError() << endl;
+        freeaddrinfo(result);
+        closesocket(listen_socket);
+        WSACleanup();
+        return 1;
+    }
+
+    freeaddrinfo(result);
+
+    // Прослушивание
+    iResult = listen(listen_socket, SOMAXCONN);
+    if (iResult == SOCKET_ERROR) {
+        cerr << "Ошибка прослушивания: " << WSAGetLastError() << endl;
+        closesocket(listen_socket);
+        WSACleanup();
+        return 1;
+    }
+
+    cout << "Сервер запущен и слушает порт " << PORT << endl;
+
+    // Принятие соединений
+    while (true) {
+        client_socket = accept(listen_socket, NULL, NULL);
+        if (client_socket == INVALID_SOCKET) {
+            cerr << "Ошибка принятия соединения: " << WSAGetLastError() << endl;
+            closesocket(listen_socket);
+            WSACleanup();
+            return 1;
+        }
+
+        thread(handle_client, client_socket).detach();
+    }
+
+    closesocket(listen_socket);
+    WSACleanup();
+    DeleteCriticalSection(&cs);
+    return 0;
+}
